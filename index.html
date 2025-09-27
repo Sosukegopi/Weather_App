@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sleek 5-Day Weather Forecast</title>
+    <!-- Load Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=100..900&display=swap');
+        :root {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom CSS for a cool floating cloud effect */
+        @keyframes float {
+            0% { transform: translate(0, 0); }
+            50% { transform: translate(10px, -10px); }
+            100% { transform: translate(0, 0); }
+        }
+        .weather-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .weather-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.5);
+        }
+        #message-box {
+            z-index: 1000;
+        }
+        /* Gradient background for the app */
+        body {
+            background: linear-gradient(135deg, #1f2937 0%, #0d0d1a 100%);
+            min-height: 100vh;
+        }
+        .floating-cloud {
+            animation: float 6s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="text-white flex items-center justify-center p-4">
+
+    <!-- Main Application Container -->
+    <div class="w-full max-w-5xl bg-gray-800/80 backdrop-blur-md rounded-3xl shadow-2xl p-6 md:p-10 border border-gray-700/50">
+
+        <h1 class="text-4xl md:text-5xl font-extrabold text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+            5-Day Forecast
+        </h1>
+        <p class="text-center text-gray-400 mb-8">
+            Check the weather for any major city.
+        </p>
+
+        <!-- Input Section -->
+        <div class="flex flex-col md:flex-row gap-4 mb-10">
+            <input
+                type="text"
+                id="city-input"
+                placeholder="Enter city name (e.g., London)"
+                class="flex-grow p-3 md:p-4 text-gray-200 bg-gray-700/70 border border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500 placeholder-gray-400"
+            >
+            <button
+                id="search-button"
+                class="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-3 px-8 rounded-xl shadow-lg transform transition duration-150 ease-in-out hover:scale-[1.02] active:scale-[0.98]"
+            >
+                Get Forecast
+            </button>
+        </div>
+
+        <!-- Current Weather & Message Box -->
+        <div id="current-weather" class="text-center mb-8 hidden">
+            <p class="text-lg font-medium text-gray-300">Weather in <span id="current-city" class="text-cyan-400"></span></p>
+            <div class="flex items-center justify-center space-x-4">
+                <!-- Icon and temperature for current weather -->
+                <img id="current-icon" class="w-20 h-20 floating-cloud" alt="Current Weather Icon">
+                <p class="text-6xl font-bold"><span id="current-temp"></span>&deg;C</p>
+            </div>
+            <p class="text-2xl text-gray-300 capitalize"><span id="current-description"></span></p>
+        </div>
+
+        <!-- 5-Day Forecast Container -->
+        <div id="forecast-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+            <!-- Forecast cards will be injected here -->
+        </div>
+
+        <!-- Message Box for errors/loading -->
+        <div id="message-box" class="fixed top-4 right-4 p-3 rounded-xl shadow-xl transition-all duration-300 transform translate-x-full opacity-0">
+            <p id="message-text" class="font-medium"></p>
+        </div>
+
+        <p id="loading-spinner" class="text-center text-cyan-400 mt-8 hidden">
+            <svg class="animate-spin h-6 w-6 inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Fetching weather data...
+        </p>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // NOTE: Replace this placeholder with your actual WeatherAPI.com API key.
+        const API_KEY = "a0fd03bcb2cf4b5fa27141050252709";
+        // Using the forecast endpoint for up to 5 days, returning the data in JSON format.
+        const BASE_URL = "https://api.weatherapi.com/v1/forecast.json";
+        
+        // Number of forecast days to request (6 days = today + 5 future days)
+        const FORECAST_DAYS = 6; 
+
+        const cityInput = document.getElementById('city-input');
+        const searchButton = document.getElementById('search-button');
+        const forecastContainer = document.getElementById('forecast-container');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const currentWeatherSection = document.getElementById('current-weather');
+
+        let isFetching = false;
+
+        /**
+         * Utility to display temporary messages (errors or success)
+         * @param {string} message The text to display
+         * @param {string} type 'success' or 'error'
+         */
+        function showMessage(message, type) {
+            messageText.textContent = message;
+
+            // Reset styles
+            messageBox.classList.remove('bg-green-600', 'bg-red-600', 'translate-x-0', 'opacity-100');
+            messageBox.classList.add('translate-x-full', 'opacity-0');
+
+            if (type === 'error') {
+                messageBox.classList.add('bg-red-600');
+            } else {
+                messageBox.classList.add('bg-green-600');
+            }
+
+            // Show the box
+            setTimeout(() => {
+                messageBox.classList.remove('translate-x-full', 'opacity-0');
+                messageBox.classList.add('translate-x-0', 'opacity-100');
+            }, 50);
+
+            // Hide the box after 4 seconds
+            setTimeout(() => {
+                messageBox.classList.remove('translate-x-0', 'opacity-100');
+                messageBox.classList.add('translate-x-full', 'opacity-0');
+            }, 4000);
+        }
+
+        /**
+         * Converts date string (YYYY-MM-DD) to Day of the Week (e.g., 'Mon', 'Tue')
+         * @param {string} dateString
+         * @returns {string} Abbreviated day name
+         */
+        function getDayName(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { weekday: 'short' });
+        }
+
+        /**
+         * Renders the current weather and 5-day forecast cards
+         * @param {object} data The full JSON response from WeatherAPI.com
+         */
+        function displayForecast(data) {
+            // Clear existing content and hide loading spinner
+            forecastContainer.innerHTML = '';
+            loadingSpinner.classList.add('hidden');
+            currentWeatherSection.classList.remove('hidden');
+
+            const city = data.location.name;
+            const current = data.current;
+            const forecastDays = data.forecast.forecastday;
+
+            // 1. Display Current Weather
+            document.getElementById('current-city').textContent = city;
+            // Use current temperature in Celsius
+            document.getElementById('current-temp').textContent = Math.round(current.temp_c); 
+            document.getElementById('current-description').textContent = current.condition.text;
+            // WeatherAPI icon URLs are often relative (starting with //), so we prepend 'https:'
+            document.getElementById('current-icon').src = 'https:' + current.condition.icon;
+
+
+            // 2. Display 5-Day Forecast (Skip today, show next 5 days)
+            // forecastDays[0] is today. We slice from index 1 for the next 5 days.
+            const futureForecast = forecastDays.slice(1, FORECAST_DAYS); 
+
+            if (futureForecast.length < 5) {
+                 // Optionally handle cases where less than 5 future days are available
+            }
+
+            futureForecast.forEach(item => {
+                const dateString = item.date;
+                const dayName = getDayName(dateString);
+                const iconUrl = 'https:' + item.day.condition.icon;
+                const avgTemp = Math.round(item.day.avgtemp_c); // Use average daily temp
+                const description = item.day.condition.text;
+
+                // Format the date for the card
+                const date = new Date(dateString);
+                const formattedDate = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+
+                const cardHtml = `
+                    <div class="weather-card bg-gray-700/70 p-4 rounded-xl text-center shadow-lg border border-gray-600 transition duration-300">
+                        <p class="text-lg font-bold mb-1 text-cyan-300">${dayName}</p>
+                        <p class="text-sm text-gray-400 mb-3">${formattedDate}</p>
+                        <img src="${iconUrl}" alt="${description}" class="w-16 h-16 mx-auto floating-cloud">
+                        <p class="text-4xl font-extrabold mt-2 text-white">${avgTemp}&deg;C</p>
+                        <p class="text-sm text-gray-300 capitalize mt-1">${description}</p>
+                    </div>
+                `;
+                forecastContainer.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        }
+
+
+        /**
+         * Fetches weather data with exponential backoff for resilience
+         * @param {string} city City name
+         * @param {number} attempt Current retry attempt count
+         */
+        async function fetchWeather(city, attempt = 0) {
+            if (isFetching) return;
+            isFetching = true;
+            loadingSpinner.classList.remove('hidden');
+            forecastContainer.innerHTML = ''; // Clear old data
+            currentWeatherSection.classList.add('hidden');
+
+            // Check API key placeholder
+            if (API_KEY === "YOUR_WEATHERAPI_API_KEY") {
+                isFetching = false;
+                loadingSpinner.classList.add('hidden');
+                showMessage("Error: Please replace 'YOUR_WEATHERAPI_API_KEY' with your actual key in the script.", 'error');
+                return;
+            }
+
+            // Construct the WeatherAPI URL (using key, city, and 6 days for 5 future days)
+            const url = `${BASE_URL}?key=${API_KEY}&q=${city}&days=${FORECAST_DAYS}`;
+            const MAX_ATTEMPTS = 3;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayForecast(data);
+                } else if (data.error && data.error.code === 1006) {
+                    // WeatherAPI error code for 'No matching location found'
+                    showMessage(`City not found: "${city}". Please try another name.`, 'error');
+                } else if (data.error && data.error.code === 2006) {
+                    // WeatherAPI error code for 'API key is invalid'
+                    showMessage("API Key is invalid. Please check your WeatherAPI.com key.", 'error');
+                } else if (attempt < MAX_ATTEMPTS) {
+                    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchWeather(city, attempt + 1); // Retry recursively
+                } else {
+                    showMessage(`Failed to fetch weather data for ${city} after ${MAX_ATTEMPTS} attempts. Status: ${response.status}.`, 'error');
+                }
+            } catch (error) {
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = Math.pow(2, attempt) * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchWeather(city, attempt + 1);
+                } else {
+                    showMessage("A network error occurred. Please check your connection.", 'error');
+                }
+            } finally {
+                // Ensure loading indicator is hidden on final attempt (success or failure)
+                loadingSpinner.classList.add('hidden');
+                isFetching = false;
+            }
+        }
+
+        /**
+         * Handles the search action.
+         */
+        function handleSearch() {
+            const city = cityInput.value.trim();
+            if (city) {
+                fetchWeather(city);
+            } else {
+                showMessage("Please enter a city name.", 'error');
+            }
+        }
+
+        // --- Event Listeners ---
+
+        searchButton.addEventListener('click', handleSearch);
+        cityInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
+
+        // Initial message on load
+        window.onload = () => {
+             showMessage("Welcome! Enter a city name to begin.", 'success');
+        };
+
+    </script>
+</body>
+</html>
